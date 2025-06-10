@@ -419,7 +419,6 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                             .catch(err => console.error('DB save vertex', err));
                     });
                 }
-                await reorganizeSubCubes(cube);
             }
             blendAllSubCubeColors();
         } catch (err) {
@@ -571,9 +570,8 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         try {
             await storeSubCubes(db, thisWindowId, cube.userData.winId, subcubesStructure);
             console.log(`Subcubes for cube ${cube.userData.winId} stored successfully`);
-            await reorganizeSubCubes(cube);
         } catch (err) {
-            console.error('Error storing or reorganizing subcubes:', err);
+            console.error('Error storing subcubes:', err);
         }
     }
 
@@ -610,31 +608,6 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         });
     }
 
-    async function reorganizeSubCubes(cube) {
-        if (!db) return;
-
-        try {
-            const subs = await loadSubCubes(db, thisWindowId, cube.userData.winId);
-            const ordered = orderSubCubes(cube);
-
-            const symbolMap = new Map();
-            ordered.forEach((ent, idx) => {
-                const subId = generateSymbol(idx);
-                symbolMap.set(subId, generateSymbol(idx));
-            });
-
-            for (let sub of subs) {
-                const expectedSymbol = symbolMap.get(sub.id) || 'AA';
-                if (sub.order !== ordered.find(ent => ent.row === sub.row && ent.col === sub.col && ent.layer === sub.layer)?.order) {
-                    await saveSubCube(db, thisWindowId, cube.userData.winId, sub.id, sub.center, sub.blendingLogicId || 'blend_soft', sub.vertexIds, ordered.findIndex(ent => ent.row === sub.row && ent.col === sub.col && ent.layer === sub.layer));
-                    console.log(`Reorganized subcube ${sub.id} to order ${sub.order}`);
-                }
-            }
-            console.log(`Subcubes for cube ${cube.userData.winId} reorganized successfully`);
-        } catch (err) {
-            console.error('Error reorganizing subcubes:', err);
-        }
-    }
 
     async function updateNumberOfCubes() {
         let wins = windowManager.getWindows();
