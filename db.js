@@ -64,21 +64,12 @@ export async function saveSubCube(db, windowUID, cubeId, subId, center, blendId,
 
         cubeReq.onsuccess = () => {
             const cube = cubeReq.result;
-            if (!cube || !cube.value || !Array.isArray(cube.value[1])) {
-                reject(new Error(`Cube with ID ${cubeId} not found or has invalid subIds`));
-                return;
+            let assignedSubId = subId;
+
+            if (cube && cube.value && Array.isArray(cube.value[1]) && order >= 0 && order < cube.value[1].length) {
+                assignedSubId = cube.value[1][order];
             }
 
-            const subIds = cube.value[1];
-            if (order < 0 || order >= subIds.length) {
-                reject(new Error(`Invalid order ${order} for subIds array of length ${subIds.length}`));
-                return;
-            }
-
-            // Use the subId from subIds at the specified order
-            const assignedSubId = subIds[order];
-
-            // Save the subcube with the assigned subId
             subStore.put({
                 id: assignedSubId,
                 windowUID,
