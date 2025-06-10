@@ -64,21 +64,12 @@ export async function saveSubCube(db, windowUID, cubeId, subId, center, blendId,
 
         cubeReq.onsuccess = () => {
             const cube = cubeReq.result;
-            if (!cube || !cube.value || !Array.isArray(cube.value[1])) {
-                reject(new Error(`Cube with ID ${cubeId} not found or has invalid subIds`));
-                return;
+            let assignedSubId = subId;
+
+            if (cube && cube.value && Array.isArray(cube.value[1]) && order >= 0 && order < cube.value[1].length) {
+                assignedSubId = cube.value[1][order];
             }
 
-            const subIds = cube.value[1];
-            if (order < 0 || order >= subIds.length) {
-                reject(new Error(`Invalid order ${order} for subIds array of length ${subIds.length}`));
-                return;
-            }
-
-            // Use the subId from subIds at the specified order
-            const assignedSubId = subIds[order];
-
-            // Save the subcube with the assigned subId
             subStore.put({
                 id: assignedSubId,
                 windowUID,
@@ -95,6 +86,42 @@ export async function saveSubCube(db, windowUID, cubeId, subId, center, blendId,
         };
 
         cubeReq.onerror = () => reject(cubeReq.error);
+    });
+}
+
+export async function saveSubCubesBatch(db, windowUID, cubeId, subcubes) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['cubes', 'subcubes'], 'readwrite');
+        const cubeStore = tx.objectStore('cubes');
+        const subStore = tx.objectStore('subcubes');
+
+        const cubeReq = cubeStore.get(cubeId);
+        cubeReq.onsuccess = () => {
+            const cube = cubeReq.result;
+            const subIds = cube && cube.value && Array.isArray(cube.value[1]) ? cube.value[1] : [];
+
+            for (const sc of subcubes) {
+                let assignedSubId = sc.id;
+                if (sc.order >= 0 && sc.order < subIds.length) {
+                    assignedSubId = subIds[sc.order];
+                }
+                subStore.put({
+                    id: assignedSubId,
+                    windowUID,
+                    cubeId,
+                    center: sc.center,
+                    originID: cubeId,
+                    blendingLogicId: sc.blendingLogicId || 'blend_soft',
+                    vertexIds: sc.vertexIds || [],
+                    order: sc.order
+                });
+            }
+        };
+
+        cubeReq.onerror = () => reject(cubeReq.error);
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
     });
 }
 
