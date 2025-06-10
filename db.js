@@ -89,6 +89,34 @@ export async function saveSubCube(db, windowUID, cubeId, subId, center, blendId,
     });
 }
 
+export async function saveSubCubesBulk(db, windowUID, cubeId, subcubeEntries) {
+    return new Promise((resolve, reject) => {
+        if (!Array.isArray(subcubeEntries) || subcubeEntries.length === 0) {
+            resolve();
+            return;
+        }
+
+        const tx = db.transaction('subcubes', 'readwrite');
+        const store = tx.objectStore('subcubes');
+
+        for (const sc of subcubeEntries) {
+            store.put({
+                id: sc.id,
+                windowUID,
+                cubeId,
+                center: sc.center,
+                originID: cubeId,
+                blendingLogicId: sc.blendingLogicId || 'blend_soft',
+                vertexIds: sc.vertexIds || [],
+                order: sc.order ?? 0
+            });
+        }
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 export async function loadSubCubes(db, windowUID, cubeId) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction('subcubes', 'readonly');
