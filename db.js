@@ -89,6 +89,42 @@ export async function saveSubCube(db, windowUID, cubeId, subId, center, blendId,
     });
 }
 
+export async function saveSubCubesBatch(db, windowUID, cubeId, subcubes) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['cubes', 'subcubes'], 'readwrite');
+        const cubeStore = tx.objectStore('cubes');
+        const subStore = tx.objectStore('subcubes');
+
+        const cubeReq = cubeStore.get(cubeId);
+        cubeReq.onsuccess = () => {
+            const cube = cubeReq.result;
+            const subIds = cube && cube.value && Array.isArray(cube.value[1]) ? cube.value[1] : [];
+
+            for (const sc of subcubes) {
+                let assignedSubId = sc.id;
+                if (sc.order >= 0 && sc.order < subIds.length) {
+                    assignedSubId = subIds[sc.order];
+                }
+                subStore.put({
+                    id: assignedSubId,
+                    windowUID,
+                    cubeId,
+                    center: sc.center,
+                    originID: cubeId,
+                    blendingLogicId: sc.blendingLogicId || 'blend_soft',
+                    vertexIds: sc.vertexIds || [],
+                    order: sc.order
+                });
+            }
+        };
+
+        cubeReq.onerror = () => reject(cubeReq.error);
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 export async function loadSubCubes(db, windowUID, cubeId) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction('subcubes', 'readonly');
