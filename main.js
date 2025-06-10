@@ -195,7 +195,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
             setupScene();
             setupGUI();
             setupControls();
-            windowsUpdated();
+            await windowsUpdated();
             if (db) await loadIndexedData();
             resize();
             updateWindowShape(false);
@@ -377,8 +377,8 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         document.body.dataset.idColor = metaData.color;
     }
 
-    function windowsUpdated() {
-        updateNumberOfCubes();
+    async function windowsUpdated() {
+        await updateNumberOfCubes();
     }
 
     async function loadIndexedData() {
@@ -636,7 +636,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         }
     }
 
-    function updateNumberOfCubes() {
+    async function updateNumberOfCubes() {
         let wins = windowManager.getWindows();
 
         let selfData = windowManager.getThisWindowData();
@@ -679,9 +679,9 @@ if (new URLSearchParams(window.location.search).get("clear")) {
             cube.position.y = win.shape.y + (win.shape.h * 0.5);
 
             try {
-                createSubCubeGrid(cube, baseDepth);
-                persistCube(cube);
-                persistAllSubCubes(cube);
+                await createSubCubeGrid(cube, baseDepth);
+                await persistCube(cube);
+                await persistAllSubCubes(cube);
                 cubes.push(cube);
                 world.add(cube);
             } catch (err) {
@@ -690,18 +690,18 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         }
     }
 
-    function updateCubeSize() {
-        cubes.forEach((cube) => {
+    async function updateCubeSize() {
+        for (const cube of cubes) {
             cube.geometry.dispose();
             let baseDepth = cubeControls.depth;
             if (cubeControls.matchDepth) baseDepth = (cubeControls.width / cubeControls.columns) * cubeControls.subDepth;
             cube.geometry = new t.BoxBufferGeometry(cubeControls.width, cubeControls.height, baseDepth);
             cube.material.color.set(cubeControls.color);
             cube.material.needsUpdate = true;
-            createSubCubeGrid(cube, baseDepth);
-            persistCube(cube);
-            persistAllSubCubes(cube);
-        });
+            await createSubCubeGrid(cube, baseDepth);
+            await persistCube(cube);
+            await persistAllSubCubes(cube);
+        }
         updateSubCubeColor();
         updateSelectedSubCubeColor();
         blendAllSubCubeColors();
@@ -1152,14 +1152,14 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         blendAllSubCubeColors();
     }
 
-    function updateSubCubeLayout() {
-        cubes.forEach((cube) => {
+    async function updateSubCubeLayout() {
+        for (const cube of cubes) {
             let baseDepth = cubeControls.depth;
             if (cubeControls.matchDepth) baseDepth = (cubeControls.width / cubeControls.columns) * cubeControls.subDepth;
-            createSubCubeGrid(cube, baseDepth);
-            persistCube(cube);
-            persistAllSubCubes(cube);
-        });
+            await createSubCubeGrid(cube, baseDepth);
+            await persistCube(cube);
+            await persistAllSubCubes(cube);
+        }
         updateSubCubeColor();
         updateSelectedSubCubeColor();
         windowManager.updateWindowsLocalStorage();
