@@ -3,7 +3,7 @@ import GPUComputationRenderer from './GPUComputationRenderer.js';
 import { createColorShader } from './computeShader.js';
 import { createSubCubeMaterial, createCubeMaterial } from './materials.js';
 import { generateSymbol, getSubCubeSymbol, getRowColLayerFromSymbol, orderSubCubes } from './symbolUtils.js';
-import { openDB, saveCube, loadCubes, saveSubCube, loadSubCubes, saveVertex, loadVertices, deleteSubCubesByCube, deleteVerticesByCube, deleteCube, deleteWindowData, cleanupStaleWindows } from './db.js';
+import { openDB, saveCube, loadCubes, saveSubCube, saveSubCubesBulk, loadSubCubes, saveVertex, loadVertices, deleteSubCubesByCube, deleteVerticesByCube, deleteCube, deleteWindowData, cleanupStaleWindows } from './db.js';
 
 let t = THREE;
 let camera, scene, renderer, world;
@@ -568,44 +568,11 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         }
 
         try {
-            await storeSubCubes(db, thisWindowId, cube.userData.winId, subcubesStructure);
+            await saveSubCubesBulk(db, thisWindowId, cube.userData.winId, subcubesStructure);
             console.log(`Subcubes for cube ${cube.userData.winId} stored successfully`);
         } catch (err) {
             console.error('Error storing subcubes:', err);
         }
-    }
-
-    async function storeSubCubes(db, windowUID, cubeId, subcubesStructure) {
-        return new Promise(async (resolve, reject) => {
-            try {
-                if (!subcubesStructure || subcubesStructure.length === 0) {
-                    console.warn('subcubesStructure is empty or undefined');
-                    reject(new Error('subcubesStructure not provided'));
-                    return;
-                }
-
-                const storedData = {};
-
-                for (const subcube of subcubesStructure) {
-                    const subcubeId = subcube.id;
-                    const order = subcube.order || 0;
-                    const updatedSubcube = {
-                        id: subcubeId,
-                        center: subcube.center,
-                        originID: cubeId,
-                        vertexIds: subcube.vertexIds || [],
-                        order: order
-                    };
-                    await saveSubCube(db, windowUID, cubeId, subcubeId, subcube.center, 'blend_soft', subcube.vertexIds, order);
-                    storedData[subcubeId] = updatedSubcube;
-                }
-
-                resolve(storedData);
-            } catch (error) {
-                console.error('Error in storeSubCubes:', error);
-                reject(error);
-            }
-        });
     }
 
 
