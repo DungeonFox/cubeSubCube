@@ -481,6 +481,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         let bottom = r === 0, top = r === rows - 1;
         let back = d === 0, front = d === layers - 1;
 
+        const vertexPromises = [];
         for (let i = 0; i < 8; i++) {
             let vid = `${subId}vtx${i}`;
             vertexIds.push(vid);
@@ -504,12 +505,15 @@ if (new URLSearchParams(window.location.search).get("clear")) {
             if ((bottom && s[1] < 0) || (top && s[1] > 0)) matchAxes++;
             if ((back && s[2] < 0) || (front && s[2] > 0)) matchAxes++;
             let blend = matchAxes >= 2 ? 'blendCorner' : 'blendsoft';
-            try {
-                await saveVertex(db, thisWindowId, cube.userData.winId, subId, i, color, [p[0] + center[0], p[1] + center[1], p[2] + center[2]], blend, weight);
-            } catch (err) {
-                console.error('DB save vertex', err);
-            }
+            vertexPromises.push(
+                saveVertex(db, thisWindowId, cube.userData.winId, subId, i,
+                    color,
+                    [p[0] + center[0], p[1] + center[1], p[2] + center[2]],
+                    blend, weight).catch(err => console.error('DB save vertex', err))
+            );
         }
+
+        await Promise.all(vertexPromises);
 
         try {
             await saveSubCube(db, thisWindowId, cube.userData.winId, subId, center, 'blend_soft', vertexIds, idx);
@@ -530,6 +534,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         let layers = cube.userData.subInfo.layers;
         let subcubesStructure = [];
 
+        const persistPromises = [];
         for (let d = 0; d < layers; d++) {
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
@@ -561,11 +566,13 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                             order: idx
                         });
 
-                        await persistSubCube(cube, r, c, d, symbol);
+                        persistPromises.push(persistSubCube(cube, r, c, d, symbol));
                     }
                 }
             }
         }
+
+        await Promise.all(persistPromises);
 
         try {
             await storeSubCubes(db, thisWindowId, cube.userData.winId, subcubesStructure);
@@ -585,8 +592,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                 }
 
                 const storedData = {};
-
-                for (const subcube of subcubesStructure) {
+                const tasks = subcubesStructure.map(subcube => {
                     const subcubeId = subcube.id;
                     const order = subcube.order || 0;
                     const updatedSubcube = {
@@ -596,10 +602,12 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                         vertexIds: subcube.vertexIds || [],
                         order: order
                     };
-                    await saveSubCube(db, windowUID, cubeId, subcubeId, subcube.center, 'blend_soft', subcube.vertexIds, order);
                     storedData[subcubeId] = updatedSubcube;
-                }
+                    return saveSubCube(db, windowUID, cubeId, subcubeId, subcube.center, 'blend_soft', subcube.vertexIds, order)
+                        .catch(err => console.error('Error saving subcube', err));
+                });
 
+                await Promise.all(tasks);
                 resolve(storedData);
             } catch (error) {
                 console.error('Error in storeSubCubes:', error);
