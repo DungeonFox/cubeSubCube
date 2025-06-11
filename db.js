@@ -24,11 +24,11 @@ export async function openDB() {
     });
 }
 
-export async function saveCube(db, windowUID, cubeId, center, subIds, vertexEntries) {
+export async function saveCube(db, windowUID, cubeId, center, subIds, vertexEntries, subInfo, colorBuffer, weightBuffer) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction('cubes', 'readwrite');
         const store = tx.objectStore('cubes');
-        const value = [center, subIds, vertexEntries];
+        const value = [center, subIds, vertexEntries, subInfo, colorBuffer, weightBuffer];
         store.put({ id: cubeId, windowUID, value });
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -46,7 +46,10 @@ export async function loadCubes(db, windowUID) {
             windowUID: r.windowUID,
             center: r.value ? r.value[0] : null,
             subIds: r.value ? r.value[1] : [],
-            vertexEntries: r.value ? r.value[2] : []
+            vertexEntries: r.value ? r.value[2] : [],
+            subInfo: r.value ? r.value[3] : null,
+            colorBuffer: r.value && Array.isArray(r.value[4]) ? new Float32Array(r.value[4]) : null,
+            weightBuffer: r.value && Array.isArray(r.value[5]) ? new Float32Array(r.value[5]) : null
         })));
         req.onerror = () => reject(req.error);
     });
