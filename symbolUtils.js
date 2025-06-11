@@ -8,7 +8,8 @@ export function generateSymbol(index) {
         symbol = chars[value % chars.length] + symbol;
         value = Math.floor(value / chars.length);
     } while (value > 0 && symbol.length < 4);
-    return symbol.padEnd(2, 'A');
+    // ensure deterministic unique symbols by left-padding
+    return symbol.padStart(2, 'A');
 }
 
 export function getSubCubeSymbol(cube, r, c, d) {
