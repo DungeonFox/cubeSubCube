@@ -1,24 +1,30 @@
 export async function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('CubeDB', 2);
+        const request = indexedDB.open('CubeDB', 3);
         request.onupgradeneeded = (event) => {
             const db = event.target.result;
+
             if (!db.objectStoreNames.contains('cubes')) {
                 const cubeStore = db.createObjectStore('cubes', { keyPath: 'id' });
                 cubeStore.createIndex('windowUID', 'windowUID', { unique: false });
             }
-            if (!db.objectStoreNames.contains('subcubes')) {
-                const subStore = db.createObjectStore('subcubes', { keyPath: 'id' });
-                subStore.createIndex('cubeId', 'cubeId', { unique: false });
-                subStore.createIndex('windowUID', 'windowUID', { unique: false });
+
+            if (db.objectStoreNames.contains('subcubes')) {
+                db.deleteObjectStore('subcubes');
             }
-            if (!db.objectStoreNames.contains('vertices')) {
-                const vertStore = db.createObjectStore('vertices', { keyPath: 'id' });
-                vertStore.createIndex('subCubeId', 'subCubeId', { unique: false });
-                vertStore.createIndex('cubeId', 'cubeId', { unique: false });
-                vertStore.createIndex('windowUID', 'windowUID', { unique: false });
+            const subStore = db.createObjectStore('subcubes', { keyPath: 'key' });
+            subStore.createIndex('cubeId', 'cubeId', { unique: false });
+            subStore.createIndex('windowUID', 'windowUID', { unique: false });
+
+            if (db.objectStoreNames.contains('vertices')) {
+                db.deleteObjectStore('vertices');
             }
+            const vertStore = db.createObjectStore('vertices', { keyPath: 'key' });
+            vertStore.createIndex('subCubeId', 'subCubeId', { unique: false });
+            vertStore.createIndex('cubeId', 'cubeId', { unique: false });
+            vertStore.createIndex('windowUID', 'windowUID', { unique: false });
         };
+
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
     });
@@ -74,6 +80,7 @@ export async function saveSubCube(db, windowUID, cubeId, subId, center, blendId,
             }
 
             subStore.put({
+                key: `${cubeId}_${assignedSubId}`,
                 id: assignedSubId,
                 windowUID,
                 cubeId,
@@ -123,8 +130,9 @@ export async function saveVertex(db, windowUID, cubeId, subId, index, color, pos
         const tx = db.transaction('vertices', 'readwrite');
         const store = tx.objectStore('vertices');
         const id = `${subId}_${index}`;
+        const key = `${cubeId}_${id}`;
         const value = [color, position, blendId, weight];
-        store.put({ id, windowUID, cubeId, subCubeId: subId, index, value });
+        store.put({ key, id, windowUID, cubeId, subCubeId: subId, index, value });
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
