@@ -389,6 +389,22 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                 let cube = cubes.find(c => c.userData.winId === cd.id);
                 if (!cube) continue;
                 if (cd.center) cube.position.set(cd.center[0], cd.center[1], cd.center[2]);
+                if (cd.subInfo) {
+                    const prev = { rows: cubeControls.rows, cols: cubeControls.columns, depth: cubeControls.subDepth };
+                    cubeControls.rows = cd.subInfo.rows;
+                    cubeControls.columns = cd.subInfo.cols;
+                    cubeControls.subDepth = cd.subInfo.layers;
+                    await createSubCubeGrid(cube, cube.geometry.parameters.depth, false);
+                    cubeControls.rows = prev.rows;
+                    cubeControls.columns = prev.cols;
+                    cubeControls.subDepth = prev.depth;
+                }
+                if (cd.colorBuffer && cube.userData.colorBuffer) {
+                    cube.userData.colorBuffer.set(cd.colorBuffer);
+                }
+                if (cd.weightBuffer && cube.userData.weightBuffer) {
+                    cube.userData.weightBuffer.set(cd.weightBuffer);
+                }
                 if (cd.subIds && cd.subIds.length > 0) {
                     let subs = await loadSubCubes(db, thisWindowId, cd.id);
                     if (subs.length !== cd.subIds.length) {
@@ -443,8 +459,11 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         ];
         let col = cube.material.color;
         let vertexEntries = corners.map(pos => [pos, [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)], 1.0, 'blendBackground']);
+        let subInfo = cube.userData.subInfo || null;
+        let colorBuffer = cube.userData.colorBuffer ? Array.from(cube.userData.colorBuffer) : null;
+        let weightBuffer = cube.userData.weightBuffer ? Array.from(cube.userData.weightBuffer) : null;
         try {
-            await saveCube(db, thisWindowId, cube.userData.winId, center, subIds, vertexEntries);
+            await saveCube(db, thisWindowId, cube.userData.winId, center, subIds, vertexEntries, subInfo, colorBuffer, weightBuffer);
         } catch (err) {
             console.error('DB save cube', err);
         }
@@ -965,7 +984,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         });
     }
 
-    async function createSubCubeGrid(cube, baseDepth = cubeControls.depth) {
+    async function createSubCubeGrid(cube, baseDepth = cubeControls.depth, cleanupDB = true) {
         if (cube.userData.subGroup) {
             cube.remove(cube.userData.subGroup);
             cube.userData.subGroup.children.forEach(ch => {
@@ -979,7 +998,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         cube.userData.subMatrix = [];
         cube.userData.subGroup = new t.Group();
 
-        if (db) {
+        if (db && cleanupDB) {
             try {
                 await Promise.all([
                     deleteSubCubesByCube(db, cube.userData.winId),
