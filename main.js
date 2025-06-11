@@ -394,7 +394,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                     cubeControls.rows = cd.subInfo.rows;
                     cubeControls.columns = cd.subInfo.cols;
                     cubeControls.subDepth = cd.subInfo.layers;
-                    await createSubCubeGrid(cube, cube.geometry.parameters.depth);
+                    await createSubCubeGrid(cube, cube.geometry.parameters.depth, false);
                     cubeControls.rows = prev.rows;
                     cubeControls.columns = prev.cols;
                     cubeControls.subDepth = prev.depth;
@@ -984,7 +984,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         });
     }
 
-    async function createSubCubeGrid(cube, baseDepth = cubeControls.depth) {
+    async function createSubCubeGrid(cube, baseDepth = cubeControls.depth, cleanupDB = true) {
         if (cube.userData.subGroup) {
             cube.remove(cube.userData.subGroup);
             cube.userData.subGroup.children.forEach(ch => {
@@ -998,7 +998,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         cube.userData.subMatrix = [];
         cube.userData.subGroup = new t.Group();
 
-        if (db) {
+        if (db && cleanupDB) {
             try {
                 await Promise.all([
                     deleteSubCubesByCube(db, cube.userData.winId),
