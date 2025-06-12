@@ -56,7 +56,12 @@ export async function openDB() {
                 };
             }
         };
-        request.onsuccess = () => resolve(request.result);
+        request.onsuccess = () => {
+            const db = request.result;
+            populateSubcubesFromCubes(db)
+                .then(() => resolve(db))
+                .catch(reject);
+        };
         request.onerror = () => reject(request.error);
     });
 }
@@ -249,6 +254,43 @@ export async function deleteWindowData(db, windowUID) {
             tx.onerror = () => rej(tx.error);
         })
     ]);
+}
+
+async function populateSubcubesFromCubes(db) {
+    return new Promise((resolve, reject) => {
+        if (!db.objectStoreNames.contains('cubes') ||
+            !db.objectStoreNames.contains('subcubes')) {
+            resolve();
+            return;
+        }
+        const tx = db.transaction(['cubes', 'subcubes'], 'readwrite');
+        const cubeStore = tx.objectStore('cubes');
+        const subStore = tx.objectStore('subcubes');
+
+        cubeStore.openCursor().onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                const cube = cursor.value;
+                const subIds = Array.isArray(cube.value?.[1]) ? cube.value[1] : [];
+                subIds.forEach((sid, idx) => {
+                    subStore.put({
+                        id: sid,
+                        cubeId: cube.id,
+                        windowUID: cube.windowUID,
+                        center: null,
+                        originID: cube.id,
+                        blendingLogicId: null,
+                        vertexIds: [],
+                        order: idx
+                    });
+                });
+                cursor.continue();
+            }
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
 }
 
 export async function cleanupStaleWindows(db, validIds) {
