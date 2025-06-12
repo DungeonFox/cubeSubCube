@@ -568,14 +568,14 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         }
 
         try {
-            await storeSubCubes(db, thisWindowId, cube.userData.winId, subcubesStructure);
+            await storeSubCubes(db, thisWindowId, cube.userData.winId, subcubesStructure, layers);
             console.log(`Subcubes for cube ${cube.userData.winId} stored successfully`);
         } catch (err) {
             console.error('Error storing subcubes:', err);
         }
     }
 
-    async function storeSubCubes(db, windowUID, cubeId, subcubesStructure) {
+    async function storeSubCubes(db, windowUID, cubeId, subcubesStructure, layers = 1) {
         return new Promise(async (resolve, reject) => {
             try {
                 if (!subcubesStructure || subcubesStructure.length === 0) {
@@ -586,7 +586,11 @@ if (new URLSearchParams(window.location.search).get("clear")) {
 
                 const storedData = {};
 
-                for (const subcube of subcubesStructure) {
+                const threshold = layers > 1 ? 9 : 5;
+                const asyncOps = [];
+
+                for (let i = 0; i < subcubesStructure.length; i++) {
+                    const subcube = subcubesStructure[i];
                     const subcubeId = subcube.id;
                     const order = subcube.order || 0;
                     const updatedSubcube = {
@@ -596,10 +600,16 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                         vertexIds: subcube.vertexIds || [],
                         order: order
                     };
-                    await saveSubCube(db, windowUID, cubeId, subcubeId, subcube.center, 'blend_soft', subcube.vertexIds, order);
-                    storedData[subcubeId] = updatedSubcube;
+                    const op = saveSubCube(db, windowUID, cubeId, subcubeId, subcube.center, 'blend_soft', subcube.vertexIds, order)
+                        .then(() => { storedData[subcubeId] = updatedSubcube; });
+                    if (i < threshold) {
+                        await op;
+                    } else {
+                        asyncOps.push(op);
+                    }
                 }
 
+                await Promise.all(asyncOps);
                 resolve(storedData);
             } catch (error) {
                 console.error('Error in storeSubCubes:', error);
