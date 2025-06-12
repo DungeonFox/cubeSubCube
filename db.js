@@ -3,20 +3,57 @@ export async function openDB() {
         const request = indexedDB.open('CubeDB', 2);
         request.onupgradeneeded = (event) => {
             const db = event.target.result;
+            const upgradeTx = event.target.transaction;
+
+            // Create cube store if it doesn't exist
+            let cubeStore;
             if (!db.objectStoreNames.contains('cubes')) {
-                const cubeStore = db.createObjectStore('cubes', { keyPath: 'id' });
+                cubeStore = db.createObjectStore('cubes', { keyPath: 'id' });
                 cubeStore.createIndex('windowUID', 'windowUID', { unique: false });
+            } else {
+                cubeStore = upgradeTx.objectStore('cubes');
             }
+
+            // Create subcubes store or get reference
+            let subStore;
             if (!db.objectStoreNames.contains('subcubes')) {
-                const subStore = db.createObjectStore('subcubes', { keyPath: 'id' });
+                subStore = db.createObjectStore('subcubes', { keyPath: 'id' });
                 subStore.createIndex('cubeId', 'cubeId', { unique: false });
                 subStore.createIndex('windowUID', 'windowUID', { unique: false });
+            } else {
+                subStore = upgradeTx.objectStore('subcubes');
             }
+
+            // Create vertices store if needed
             if (!db.objectStoreNames.contains('vertices')) {
                 const vertStore = db.createObjectStore('vertices', { keyPath: 'id' });
                 vertStore.createIndex('subCubeId', 'subCubeId', { unique: false });
                 vertStore.createIndex('cubeId', 'cubeId', { unique: false });
                 vertStore.createIndex('windowUID', 'windowUID', { unique: false });
+            }
+
+            // If upgrading from a version without subcubes store, populate it
+            if (event.oldVersion < 2 && subStore && cubeStore) {
+                cubeStore.openCursor().onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        const cube = cursor.value;
+                        const subIds = Array.isArray(cube.value?.[1]) ? cube.value[1] : [];
+                        subIds.forEach((sid, idx) => {
+                            subStore.put({
+                                id: sid,
+                                cubeId: cube.id,
+                                windowUID: cube.windowUID,
+                                center: null,
+                                originID: cube.id,
+                                blendingLogicId: null,
+                                vertexIds: [],
+                                order: idx
+                            });
+                        });
+                        cursor.continue();
+                    }
+                };
             }
         };
         request.onsuccess = () => resolve(request.result);
