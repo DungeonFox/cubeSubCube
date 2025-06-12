@@ -257,40 +257,51 @@ export async function deleteWindowData(db, windowUID) {
 }
 
 async function populateSubcubesFromCubes(db) {
-    return new Promise((resolve, reject) => {
-        if (!db.objectStoreNames.contains('cubes') ||
-            !db.objectStoreNames.contains('subcubes')) {
-            resolve();
-            return;
-        }
-        const tx = db.transaction(['cubes', 'subcubes'], 'readwrite');
-        const cubeStore = tx.objectStore('cubes');
-        const subStore = tx.objectStore('subcubes');
+    if (!db.objectStoreNames.contains('cubes') ||
+        !db.objectStoreNames.contains('subcubes')) {
+        return;
+    }
 
-        cubeStore.openCursor().onsuccess = (e) => {
-            const cursor = e.target.result;
-            if (cursor) {
-                const cube = cursor.value;
-                const subIds = Array.isArray(cube.value?.[1]) ? cube.value[1] : [];
-                subIds.forEach((sid, idx) => {
-                    subStore.put({
-                        id: sid,
-                        cubeId: cube.id,
-                        windowUID: cube.windowUID,
-                        center: null,
-                        originID: cube.id,
-                        blendingLogicId: null,
-                        vertexIds: [],
-                        order: idx
-                    });
-                });
-                cursor.continue();
-            }
-        };
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+    // Helper to store a batch of subcube entries using a single transaction
+    const putBatch = (entries) => new Promise((res, rej) => {
+        const tx = db.transaction('subcubes', 'readwrite');
+        const store = tx.objectStore('subcubes');
+        entries.forEach(ent => store.put(ent));
+        tx.oncomplete = () => res();
+        tx.onerror = () => rej(tx.error);
     });
+
+    const cubes = await new Promise((res, rej) => {
+        const tx = db.transaction('cubes', 'readonly');
+        const store = tx.objectStore('cubes');
+        const req = store.getAll();
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej(req.error);
+    });
+
+    for (const cube of cubes) {
+        const subIds = Array.isArray(cube.value?.[1]) ? cube.value[1] : [];
+        const entries = subIds.map((sid, idx) => ({
+            id: sid,
+            cubeId: cube.id,
+            windowUID: cube.windowUID,
+            center: null,
+            originID: cube.id,
+            blendingLogicId: null,
+            vertexIds: [],
+            order: idx
+        }));
+
+        const threshold = subIds.length > 8 ? 9 : 5;
+
+        if (entries.length) {
+            await putBatch(entries.slice(0, threshold));
+            const asyncEntries = entries.slice(threshold);
+            if (asyncEntries.length) {
+                await Promise.all(asyncEntries.map(ent => putBatch([ent])));
+            }
+        }
+    }
 }
 
 export async function cleanupStaleWindows(db, validIds) {
