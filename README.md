@@ -24,12 +24,14 @@ The main application logic is contained within `main.js` and `WindowManager.js`.
 - `three.r124.min.js`: Minified version of the Three.js library used for 3D graphics rendering.
 - `subcubeBlending.js`: Utility with vertex blending helpers used to treat sub‑cubes as sub‑pixels.
 - `subpixelMatrix.js`: Helper for converting sub-cube vertex colors to 2×2×2 matrices and storing them in an IndexedDB bucket.
+- `db.js`: Opens the application database within an IndexedDB storage bucket so cube and vertex data persist across windows.
 
 ## Detailed Functionality
 - `WindowManager.js` handles the lifecycle of multiple browser windows, including creation, synchronization, and removal. It uses localStorage to maintain state across windows.
 - `main.js` initializes the 3D scene using Three.js, manages the window's resize events, and updates the scene based on window interactions.
 - `subcubeBlending.js` contains helpers for blending the colors of sub‑cube vertices. These functions mirror the sub‑pixel logic from the snapshot tools, allowing each cube's vertices to behave like sub‑pixels when calculating the final color of a sub‑cube.
 - `subpixelMatrix.js` stores per‑subcube vertex color matrices in an IndexedDB bucket so interactive edits can persist across windows.
+- `db.js` uses a storage bucket backed IndexedDB database to persist cubes, subcubes, and vertices.
 
 ## Contributing
 Contributions to enhance or expand the project are welcome. Feel free to fork the repository, make changes, and submit pull requests.

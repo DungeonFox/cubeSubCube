@@ -1,27 +1,47 @@
+let dbOpenPromise = null;
+
 export async function openDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open('CubeDB', 2);
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains('cubes')) {
-                const cubeStore = db.createObjectStore('cubes', { keyPath: 'id' });
-                cubeStore.createIndex('windowUID', 'windowUID', { unique: false });
-            }
-            if (!db.objectStoreNames.contains('subcubes')) {
-                const subStore = db.createObjectStore('subcubes', { keyPath: 'id' });
-                subStore.createIndex('cubeId', 'cubeId', { unique: false });
-                subStore.createIndex('windowUID', 'windowUID', { unique: false });
-            }
-            if (!db.objectStoreNames.contains('vertices')) {
-                const vertStore = db.createObjectStore('vertices', { keyPath: 'id' });
-                vertStore.createIndex('subCubeId', 'subCubeId', { unique: false });
-                vertStore.createIndex('cubeId', 'cubeId', { unique: false });
-                vertStore.createIndex('windowUID', 'windowUID', { unique: false });
-            }
+    if (dbOpenPromise) return dbOpenPromise;
+    dbOpenPromise = new Promise((resolve, reject) => {
+        const openIndexedDB = (idbFactory) => {
+            const request = idbFactory.open('CubeDB', 2);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('cubes')) {
+                    const cubeStore = db.createObjectStore('cubes', { keyPath: 'id' });
+                    cubeStore.createIndex('windowUID', 'windowUID', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('subcubes')) {
+                    const subStore = db.createObjectStore('subcubes', { keyPath: 'id' });
+                    subStore.createIndex('cubeId', 'cubeId', { unique: false });
+                    subStore.createIndex('windowUID', 'windowUID', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('vertices')) {
+                    const vertStore = db.createObjectStore('vertices', { keyPath: 'id' });
+                    vertStore.createIndex('subCubeId', 'subCubeId', { unique: false });
+                    vertStore.createIndex('cubeId', 'cubeId', { unique: false });
+                    vertStore.createIndex('windowUID', 'windowUID', { unique: false });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
         };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+
+        if (!navigator.storageBuckets) {
+            openIndexedDB(indexedDB);
+            return;
+        }
+
+        (async () => {
+            try {
+                const bucket = await navigator.storageBuckets.open('cubedb');
+                openIndexedDB(bucket.indexedDB);
+            } catch (e) {
+                reject(e);
+            }
+        })();
     });
+    return dbOpenPromise;
 }
 
 export async function saveCube(db, windowUID, cubeId, center, subIds, vertexEntries) {
