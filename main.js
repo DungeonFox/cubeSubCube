@@ -5,6 +5,7 @@ import { createSubCubeMaterial, createCubeMaterial } from './materials.js';
 import { generateSymbol, getSubCubeSymbol, getRowColLayerFromSymbol, orderSubCubes } from './symbolUtils.js';
 import { openDB, saveCube, loadCubes, saveSubCube, loadSubCubes, saveVertex, loadVertices, deleteSubCubesByCube, deleteVerticesByCube, deleteCube, deleteWindowData, cleanupStaleWindows } from './db.js';
 import { blendVertices } from './subcubeBlending.js';
+import { extractSubPixelMatrix, applySubPixelMatrix, saveMatrixLocal, loadMatrixLocal } from './subpixelMatrix.js';
 
 let t = THREE;
 let camera, scene, renderer, world;
@@ -422,6 +423,10 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                 }
             }
             blendAllSubCubeColors();
+            cubes.forEach(c => {
+                const m = loadMatrixLocal(c.userData.winId);
+                if (m) applySubPixelMatrix(c, m);
+            });
         } catch (err) {
             console.error('DB load error', err);
         }
@@ -828,6 +833,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
             cube.userData.metaData.subColors[key] = colorStr;
             let symbol = getSubCubeSymbol(cube, r, c, d);
             persistSubCube(cube, r, c, d, symbol);
+            saveMatrixLocal(cube.userData.winId, extractSubPixelMatrix(cube));
         }
     }
 
@@ -850,6 +856,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
             cube.userData.metaData.subWeights[key] = weightVal;
             let symbol = getSubCubeSymbol(cube, r, c, d);
             persistSubCube(cube, r, c, d, symbol);
+            saveMatrixLocal(cube.userData.winId, extractSubPixelMatrix(cube));
         }
     }
 
@@ -915,6 +922,11 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                         }
                     }
                 }
+            }
+
+            const matrix = extractSubPixelMatrix(cube);
+            if (matrix) {
+                saveMatrixLocal(cube.userData.winId, matrix);
             }
         });
     }
@@ -1076,6 +1088,12 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         }
 
         cube.add(cube.userData.subGroup);
+
+        const storedMatrix = loadMatrixLocal(cube.userData.winId);
+        if (storedMatrix) {
+            applySubPixelMatrix(cube, storedMatrix);
+        }
+
         blendAllSubCubeColors();
     }
 
