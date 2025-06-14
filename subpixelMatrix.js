@@ -38,52 +38,12 @@ export function matrixToVertices(attr, matrix) {
   attr.needsUpdate = true;
 }
 
-let openPromise = null;
-
-async function openMatrixDB() {
-  if (openPromise) return openPromise;
-  openPromise = new Promise((resolve, reject) => {
-    if (!navigator.storageBuckets) {
-      const req = indexedDB.open('SubMatrixDB', 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains('matrices')) {
-          db.createObjectStore('matrices', { keyPath: 'id' });
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-      return;
-    }
-    (async () => {
-      try {
-        const bucket = await navigator.storageBuckets.open('submatrix');
-        const req = bucket.indexedDB.open('Matrices', 1);
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains('matrices')) {
-            db.createObjectStore('matrices', { keyPath: 'id' });
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      } catch (e) {
-        reject(e);
-      }
-    })();
-  });
-  return openPromise;
-}
+import { openDB, saveMatrix, loadMatrix } from './db.js';
 
 export async function saveMatrixToStorage(cubeId, subId, matrix) {
   try {
-    const db = await openMatrixDB();
-    await new Promise((res, rej) => {
-      const tx = db.transaction('matrices', 'readwrite');
-      tx.objectStore('matrices').put({ id: `${cubeId}_${subId}`, cubeId, subId, matrix });
-      tx.oncomplete = () => res();
-      tx.onerror = () => rej(tx.error);
-    });
+    const db = await openDB();
+    await saveMatrix(db, cubeId, subId, matrix);
     localStorage.setItem(`subMatrix_${cubeId}_${subId}`, Date.now().toString());
   } catch (e) {
     console.warn('Failed to save subpixel matrix', e);
@@ -92,14 +52,8 @@ export async function saveMatrixToStorage(cubeId, subId, matrix) {
 
 export async function loadMatrixFromStorage(cubeId, subId) {
   try {
-    const db = await openMatrixDB();
-    const res = await new Promise((resolve, reject) => {
-      const tx = db.transaction('matrices', 'readonly');
-      const req = tx.objectStore('matrices').get(`${cubeId}_${subId}`);
-      req.onsuccess = () => resolve(req.result ? req.result.matrix : null);
-      req.onerror = () => reject(req.error);
-    });
-    return res;
+    const db = await openDB();
+    return await loadMatrix(db, cubeId, subId);
   } catch (e) {
     console.warn('Failed to load subpixel matrix', e);
     return null;
