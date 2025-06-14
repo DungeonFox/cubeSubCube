@@ -4,6 +4,8 @@ import { createColorShader } from './computeShader.js';
 import { createSubCubeMaterial, createCubeMaterial } from './materials.js';
 import { generateSymbol, getSubCubeSymbol, getRowColLayerFromSymbol, orderSubCubes } from './symbolUtils.js';
 import { openDB, saveCube, loadCubes, saveSubCube, loadSubCubes, saveVertex, loadVertices, deleteSubCubesByCube, deleteVerticesByCube, deleteCube, deleteWindowData, cleanupStaleWindows } from './db.js';
+import { blendVertices } from './subcubeBlending.js';
+import { verticesToMatrix, matrixToVertices, saveMatrixToStorage, loadMatrixFromStorage } from './subpixelMatrix.js';
 
 let t = THREE;
 let camera, scene, renderer, world;
@@ -164,6 +166,9 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                 cubeControls.rotZ = globalSettings.rotZ;
                 updateAnimButton();
             } catch (_) {}
+        } else if (e.key && e.key.startsWith('subMatrix_')) {
+            const [, cubeId, subId] = e.key.split('_');
+            applyMatrixFromStorage(cubeId, subId);
         }
     });
 
@@ -410,6 +415,12 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                                 group.userData.vertexAttr.needsUpdate = true;
                             }
                         });
+
+                        const group = cube.userData.subMatrix?.[d]?.[r]?.[c];
+                        if (group && group.userData && group.userData.vertexAttr) {
+                            const m = await loadMatrixFromStorage(cd.id, s.id);
+                            if (m) matrixToVertices(group.userData.vertexAttr, m);
+                        }
                     }
                 }
                 if (cd.vertexEntries) {
@@ -421,6 +432,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
                 }
             }
             blendAllSubCubeColors();
+            await applyAllMatricesFromStorage();
         } catch (err) {
             console.error('DB load error', err);
         }
@@ -513,6 +525,11 @@ if (new URLSearchParams(window.location.search).get("clear")) {
 
         try {
             await saveSubCube(db, thisWindowId, cube.userData.winId, subId, center, 'blend_soft', vertexIds, idx);
+            const group = cube.userData.subMatrix?.[d]?.[r]?.[c];
+            if (group && group.userData && group.userData.vertexAttr) {
+                const mat = verticesToMatrix(group.userData.vertexAttr);
+                if (mat) await saveMatrixToStorage(cube.userData.winId, subId, mat);
+            }
         } catch (err) {
             console.error('DB save subcube', err);
         }
@@ -794,6 +811,7 @@ if (new URLSearchParams(window.location.search).get("clear")) {
 
     window.setSubCubeColor = setSubCubeColor;
     window.setSubCubeWeight = setSubCubeWeight;
+    window.applyMatrixFromStorage = applyMatrixFromStorage;
 
     function applyColorToSubCube(cube, row, col, layer, colorStr) {
         let m = cube.userData.subMatrix;
@@ -852,6 +870,20 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         }
     }
 
+    async function applyMatrixFromStorage(cubeId, subId) {
+        const cube = cubes.find(c => c.userData.winId === cubeId);
+        if (!cube || !cube.userData.subInfo) return;
+        let [r, c, d] = getRowColLayerFromSymbol(cube, subId);
+        const group = cube.userData.subMatrix?.[d]?.[r]?.[c];
+        if (group && group.userData && group.userData.vertexAttr) {
+            const m = await loadMatrixFromStorage(cubeId, subId);
+            if (m) {
+                matrixToVertices(group.userData.vertexAttr, m);
+                blendAllSubCubeColors();
+            }
+        }
+    }
+
     function applyColorData(arr) {
         cubes.forEach((cube) => {
             if (cube.userData.subGroup) {
@@ -880,87 +912,57 @@ if (new URLSearchParams(window.location.search).get("clear")) {
         blendAllSubCubeColors();
     }
 
-    function blendAllSubCubeColors() {
-        let infos = [];
-        cubes.forEach(cube => {
-            if (!cube.userData || !cube.userData.subInfo || !cube.userData.subMatrix) return;
-            let { rows, cols, layers } = cube.userData.subInfo;
-            let colors = cube.userData.colorBuffer;
-            let weights = cube.userData.weightBuffer || [];
-            if (!colors) return;
+    async function applyAllMatricesFromStorage() {
+        for (const cube of cubes) {
+            if (!cube.userData.subGroup) return;
+            const rows = cube.userData.subInfo.rows;
+            const cols = cube.userData.subInfo.cols;
+            const layers = cube.userData.subInfo.layers;
             for (let d = 0; d < layers; d++) {
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
-                        let idx = d * rows * cols + r * cols + c;
-                        let g = cube.userData.subMatrix[d]?.[r]?.[c];
-                        if (!g || !g.children[1] || !g.userData.vertexAttr) continue;
-                        let posAttr = g.children[1].geometry.attributes.position;
-                        let colorAttr = g.userData.vertexAttr;
-                        for (let vi = 0; vi < posAttr.count; vi++) {
-                            let v = new t.Vector3(posAttr.array[vi * 3], posAttr.array[vi * 3 + 1], posAttr.array[vi * 3 + 2]);
-                            g.localToWorld(v);
-                            infos.push({ 
-                                cube, 
-                                idx, 
-                                vertexIndex: vi, 
-                                group: g, 
-                                pos: v, 
-                                color: [colorAttr.array[vi * 3], colorAttr.array[vi * 3 + 1], colorAttr.array[vi * 3 + 2]], 
-                                weight: weights[idx] || 1, 
-                                attr: colorAttr 
-                            });
-                        }
+                        const symbol = getSubCubeSymbol(cube, r, c, d);
+                        await applyMatrixFromStorage(cube.userData.winId, symbol);
                     }
                 }
             }
-        });
-
-        let newCols = new Array(infos.length);
-        for (let i = 0; i < infos.length; i++) {
-            let rSum = 0, gSum = 0, bSum = 0, sum = 0;
-            for (let j = 0; j < infos.length; j++) {
-                let dx = infos[j].pos.x - infos[i].pos.x;
-                let dy = infos[j].pos.y - infos[i].pos.y;
-                let dz = infos[j].pos.z - infos[i].pos.z;
-                let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                let w = infos[j].weight / (dist + 1e-6);
-                rSum += infos[j].color[0] * w;
-                gSum += infos[j].color[1] * w;
-                bSum += infos[j].color[2] * w;
-                sum += w;
-            }
-            newCols[i] = [rSum / sum, gSum / sum, bSum / sum];
         }
+    }
 
-        let subTotals = new Map();
-        for (let i = 0; i < infos.length; i++) {
-            let col = newCols[i];
-            let info = infos[i];
-            if (info.attr && info.attr.array) {
-                info.attr.array[info.vertexIndex * 3] = col[0];
-                info.attr.array[info.vertexIndex * 3 + 1] = col[1];
-                info.attr.array[info.vertexIndex * 3 + 2] = col[2];
-                info.attr.needsUpdate = true;
-            }
+    function blendAllSubCubeColors() {
+        cubes.forEach(cube => {
+            if (!cube.userData || !cube.userData.subInfo || !cube.userData.subMatrix) return;
+            const { rows, cols, layers } = cube.userData.subInfo;
+            const colors = cube.userData.colorBuffer;
+            const weights = cube.userData.weightBuffer || [];
+            if (!colors) return;
 
-            let key = info.cube.uuid + '_' + info.idx;
-            if (!subTotals.has(key)) subTotals.set(key, { cube: info.cube, group: info.group, idx: info.idx, r: 0, g: 0, b: 0, count: 0 });
-            let st = subTotals.get(key);
-            st.r += col[0];
-            st.g += col[1];
-            st.b += col[2];
-            st.count++;
-        }
+            for (let d = 0; d < layers; d++) {
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        const idx = d * rows * cols + r * cols + c;
+                        const g = cube.userData.subMatrix[d]?.[r]?.[c];
+                        if (!g || !g.userData || !g.userData.vertexAttr) continue;
 
-        subTotals.forEach(st => {
-            let r = st.r / st.count;
-            let g = st.g / st.count;
-            let b = st.b / st.count;
-            st.group.children.forEach(obj => obj.material.color.setRGB(r, g, b));
-            if (st.cube.userData.colorBuffer && st.cube.userData.colorBuffer.length > st.idx * 3 + 2) {
-                st.cube.userData.colorBuffer[st.idx * 3] = r;
-                st.cube.userData.colorBuffer[st.idx * 3 + 1] = g;
-                st.cube.userData.colorBuffer[st.idx * 3 + 2] = b;
+                        const verts = [];
+                        const attr = g.userData.vertexAttr;
+                        for (let vi = 0; vi < attr.count; vi++) {
+                            verts.push({
+                                color: [attr.array[vi * 3], attr.array[vi * 3 + 1], attr.array[vi * 3 + 2]],
+                                weight: weights[idx] || 1
+                            });
+                        }
+
+                        const col = blendVertices(verts, 'weighted');
+                        g.children.forEach(obj => obj.material.color.setRGB(col.r, col.g, col.b));
+
+                        if (colors && colors.length > idx * 3 + 2) {
+                            colors[idx * 3] = col.r;
+                            colors[idx * 3 + 1] = col.g;
+                            colors[idx * 3 + 2] = col.b;
+                        }
+                    }
+                }
             }
         });
     }

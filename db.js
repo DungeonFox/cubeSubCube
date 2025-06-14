@@ -1,27 +1,50 @@
+let dbOpenPromise = null;
+
 export async function openDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open('CubeDB', 2);
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains('cubes')) {
-                const cubeStore = db.createObjectStore('cubes', { keyPath: 'id' });
-                cubeStore.createIndex('windowUID', 'windowUID', { unique: false });
-            }
-            if (!db.objectStoreNames.contains('subcubes')) {
-                const subStore = db.createObjectStore('subcubes', { keyPath: 'id' });
-                subStore.createIndex('cubeId', 'cubeId', { unique: false });
-                subStore.createIndex('windowUID', 'windowUID', { unique: false });
-            }
-            if (!db.objectStoreNames.contains('vertices')) {
-                const vertStore = db.createObjectStore('vertices', { keyPath: 'id' });
-                vertStore.createIndex('subCubeId', 'subCubeId', { unique: false });
-                vertStore.createIndex('cubeId', 'cubeId', { unique: false });
-                vertStore.createIndex('windowUID', 'windowUID', { unique: false });
-            }
+    if (dbOpenPromise) return dbOpenPromise;
+    dbOpenPromise = new Promise((resolve, reject) => {
+        const openIndexedDB = (idbFactory) => {
+            const request = idbFactory.open('CubeDB', 3);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('cubes')) {
+                    const cubeStore = db.createObjectStore('cubes', { keyPath: 'id' });
+                    cubeStore.createIndex('windowUID', 'windowUID', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('subcubes')) {
+                    const subStore = db.createObjectStore('subcubes', { keyPath: 'id' });
+                    subStore.createIndex('cubeId', 'cubeId', { unique: false });
+                    subStore.createIndex('windowUID', 'windowUID', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('vertices')) {
+                    const vertStore = db.createObjectStore('vertices', { keyPath: 'id' });
+                    vertStore.createIndex('subCubeId', 'subCubeId', { unique: false });
+                    vertStore.createIndex('cubeId', 'cubeId', { unique: false });
+                    vertStore.createIndex('windowUID', 'windowUID', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('matrices')) {
+                    db.createObjectStore('matrices', { keyPath: 'id' });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
         };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+
+        if (!navigator.storageBuckets) {
+            openIndexedDB(indexedDB);
+            return;
+        }
+
+        (async () => {
+            try {
+                const bucket = await navigator.storageBuckets.open('cubedb');
+                openIndexedDB(bucket.indexedDB);
+            } catch (e) {
+                reject(e);
+            }
+        })();
     });
+    return dbOpenPromise;
 }
 
 export async function saveCube(db, windowUID, cubeId, center, subIds, vertexEntries) {
@@ -229,4 +252,24 @@ export async function cleanupStaleWindows(db, validIds) {
     for (let id of [...new Set(toDelete)]) {
         await deleteWindowData(db, id);
     }
+}
+
+export async function saveMatrix(db, cubeId, subId, matrix) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('matrices', 'readwrite');
+        const store = tx.objectStore('matrices');
+        store.put({ id: `${cubeId}_${subId}`, cubeId, subId, matrix });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export async function loadMatrix(db, cubeId, subId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('matrices', 'readonly');
+        const store = tx.objectStore('matrices');
+        const req = store.get(`${cubeId}_${subId}`);
+        req.onsuccess = () => resolve(req.result ? req.result.matrix : null);
+        req.onerror = () => reject(req.error);
+    });
 }
